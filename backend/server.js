@@ -32,9 +32,13 @@ function makeDdgUrl(q) {
   return `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}&kl=in-en`;
 }
 
+const serverLogs = [];
 function log(msg) {
   const ts = new Date().toLocaleTimeString("en-US", { hour12: false });
-  console.log(`[${ts}] ${msg}`);
+  const entry = `[${ts}] ${msg}`;
+  console.log(entry);
+  serverLogs.push(entry);
+  if (serverLogs.length > 300) serverLogs.shift();
 }
 
 // ─── HTTP Utilities with Decompression & Hard Timeout ──────────────────────
@@ -1406,6 +1410,24 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/api/version" && req.method === "GET") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ commit: GIT_COMMIT }));
+    return;
+  }
+
+  // API: Live Debug Logs
+  if (pathname === "/api/debug" && req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify(
+        {
+          commit: GIT_COMMIT,
+          uptime_seconds: Math.floor(process.uptime()),
+          logs_count: serverLogs.length,
+          logs: serverLogs,
+        },
+        null,
+        2
+      )
+    );
     return;
   }
 
