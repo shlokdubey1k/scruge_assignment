@@ -678,12 +678,15 @@ function parseDdgResults(html, allowedDomain, requirePath) {
     let cleanUrl = href.split("?")[0];
     if (seenUrls.has(cleanUrl)) continue;
 
-    // Filter out category, search, and mailer landing pages
+    // Filter out category, search, blog, and mailer landing pages
     if (
       cleanUrl.endsWith("/search") ||
       cleanUrl.includes("/mailers") ||
       cleanUrl.includes("/pr?sid=") ||
-      cleanUrl.includes("/all-products")
+      cleanUrl.includes("/all-products") ||
+      cleanUrl.includes("/clp/") ||
+      cleanUrl.includes("/bc/") ||
+      cleanUrl.includes("/unboxed/")
     ) {
       continue;
     }
@@ -840,7 +843,7 @@ MATCHING RULES:
      * Storage must match exactly (e.g. 128 GB matches 128 GB; a 128 GB target NEVER matches a 256 GB candidate).
      * RAM must match the hardware variant (e.g. an 8 GB RAM model must NOT match a 6 GB or 12 GB model).
      * For devices with fixed hardware RAM architectures (such as Apple iPhone 15 where all base models have 6 GB RAM), verify that the model and storage match the target's 6 GB RAM configuration.
-   - For televisions: Screen size must match (e.g. 55 inch matches 55 inch / 138.8 cm).
+   - For televisions: Screen size must match (e.g. 55 inch matches 55 inch / 138.8 cm). For Sony televisions, retail channel sister model lines sharing the identical hardware chassis/specs (such as online exclusive KD-55X74L and retail counterpart KD-55X75L / SONY X75L 55 inch) are the same model line.
    - For sneakers and clothing: Colour must match. Primary colour and marketing variants are acceptable (e.g. "White" matches "Puma White", "White-Black", "All White", "White / Black"; "Black" matches "Puma Black", "Core Black"). If the target colour is not specified (null), match the base model in any primary colourway.
 3. Completely different products (such as phone cases, cables, t-shirts when searching shoes, different sneaker models, or wrong specs) MUST NOT match.
 4. If NO candidate is the exact same product, set matched_index = 0.
