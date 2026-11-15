@@ -1,80 +1,85 @@
-# 🧸 How Product Matching Works
-### *Explained Like You're 5 (With Pictures & Flowcharts!)*
+# How Cross-Platform Product Matching Works
+### *A plain-English walkthrough of the architecture, matching rules, and edge cases*
 
 ---
 
-## 🌟 The Big Idea: The Smart Toy Detective
+## 💡 The Problem & My Approach
 
-Imagine you found a toy robot on **Amazon** that you really want. But your mom says: 
-> *"Let's check if the toy store down the street (**Flipkart**, **Croma**, or **Myntra**) has the EXACT same robot, and if it's sitting on the shelf ready to buy!"*
+When you take a product URL from Amazon India and try to find the exact same item on Flipkart, Croma, or Myntra, a simple keyword search almost always fails. In Indian e-commerce:
 
-Instead of clicking and typing on 10 different websites yourself, our app acts like a **super-fast detective** 🕵️‍♂️ who does it all for you in a few seconds!
+1. **Titles are cluttered with marketing noise**: Sellers pack titles with unrelated keywords, offers, and warranty text (`"Apple iPhone 15 (128 GB) - Blue | A16 Bionic | Free Earphones Offer | 1 Year Warranty"` vs `"APPLE iPhone 15 (Blue, 128 GB)"`).
+2. **Specs change the product entirely**: A 128 GB smartphone is a completely different SKU and price point from a 256 GB variant, even though 95% of the title words are identical.
+3. **Online vs Retail Model Suffixes**: Brands like Sony often assign different model numbers to online-exclusive listings vs retail store shelves (e.g. `KD-55X74L` on Amazon vs `KD-55X75L` on Croma), even though the panel, processor, and hardware are 100% identical.
+4. **Phantom Listings**: A product might have a search result or indexed page, but be completely out of stock or unorderable when you click it.
+
+To solve this cleanly without any bulky third-party scraping libraries, I designed a lightweight 4-step pipeline: **Normalize Amazon Input → Route to Platforms → Semantic Match with Gemini → Live Stock Verification**.
 
 ---
 
-## 🗺️ How It Works: The Grand Map
+## 🗺️ High-Level System Flowchart
 
 ```mermaid
 flowchart TD
-    Start(["🛒 You paste an Amazon Link"]) --> ReadAmazon["📖 Step 1: Read the Amazon Page<br><i>What is the brand, model, and specs?</i>"]
+    Start(["🛒 User inputs Amazon URL"]) --> ReadAmazon["📖 Step 1: Ingest Amazon Listing<br><i>Extract ASIN & fetch page content</i>"]
     
-    ReadAmazon --> CategorySplit{"📦 Which Category is it?"}
+    ReadAmazon --> CategorySplit{"📦 Identify Category & Rules"}
     
-    CategorySplit -->|"📱 Smartphone"| ShopTech["Search Flipkart & Croma<br><i>Check: RAM & Storage</i>"]
-    CategorySplit -->|"📺 Television"| ShopTV["Search Flipkart & Croma<br><i>Check: Screen Size</i>"]
-    CategorySplit -->|"👟 Sneakers"| ShopFashion1["Search Flipkart & Myntra<br><i>Check: Colourway</i>"]
-    CategorySplit -->|"👕 T-shirt / Clothing"| ShopFashion2["Search Flipkart & Myntra<br><i>Check: Colourway</i>"]
+    CategorySplit -->|"📱 Smartphone"| ShopTech["Query Flipkart & Croma<br><i>Strict Specs: RAM & Storage</i>"]
+    CategorySplit -->|"📺 Television"| ShopTV["Query Flipkart & Croma<br><i>Strict Specs: Screen Size</i>"]
+    CategorySplit -->|"👟 Sneakers"| ShopFashion1["Query Flipkart & Myntra<br><i>Strict Specs: Colourway</i>"]
+    CategorySplit -->|"👕 T-shirt / Clothing"| ShopFashion2["Query Flipkart & Myntra<br><i>Strict Specs: Colourway</i>"]
     
-    ShopTech --> AIDetective["🧠 Step 2: The AI Detective<br><i>Compares all search candidates</i>"]
+    ShopTech --> AIDetective["🧠 Step 2: Semantic Matching Engine<br><i>Filter noise & validate spec parity</i>"]
     ShopTV --> AIDetective
     ShopFashion1 --> AIDetective
     ShopFashion2 --> AIDetective
     
-    AIDetective --> FoundMatch{"Did we find the<br>EXACT same product?"}
+    AIDetective --> FoundMatch{"Did we find an<br>exact variant match?"}
     
-    FoundMatch -->|"No"| BlackBadge["⚫ <b>Not Listed</b><br>Store does not sell this product"]
-    FoundMatch -->|"Yes"| LiveStock["🔍 Step 3: Live Shelf Check<br><i>Check Buy Now vs Notify Me button</i>"]
+    FoundMatch -->|"No"| BlackBadge["⚫ <b>Not Listed</b><br>Store does not sell this variant"]
+    FoundMatch -->|"Yes"| LiveStock["🔍 Step 3: Live PDP Stock Verification<br><i>Inspect checkout buttons on real page</i>"]
     
-    LiveStock --> InStock{"Can you buy it<br>right now?"}
-    InStock -->|"Yes (Buy Now)"| GreenBadge["🟢 <b>In Stock</b><br>Direct buy link ready!"]
-    InStock -->|"No (Notify Me / Sold Out)"| YellowBadge["🟡 <b>Out of Stock</b><br>Found it, but currently unavailable"]
+    LiveStock --> InStock{"Can a customer purchase<br>it right now?"}
+    InStock -->|"Yes (Buy Now / Add to Cart)"| GreenBadge["🟢 <b>In Stock</b><br>Direct purchase link ready"]
+    InStock -->|"No (Notify Me / Sold Out)"| YellowBadge["🟡 <b>Out of Stock</b><br>Exact item exists, but unavailable"]
 ```
 
 ---
 
-## 🔍 Step 1: Reading the Amazon Page
+## 🔍 Step 1: Normalizing the Amazon Link
 
-When you give us an Amazon link, we open the page and ask our AI (Google Gemini):
-> *"Hey detective, what are we looking at? Tell me the brand, model name, and its superpowers!"*
+When a user submits an Amazon link, the first task is getting clean, structured metadata without being tricked by tracking tags or bloated page HTML.
 
 ```mermaid
 flowchart LR
     Link["Amazon Link<br>amazon.in/dp/..."] --> Scraper["Fetcher & ASIN Resolver"]
     Scraper --> Gemini["Gemini AI Extraction"]
-    Gemini --> Specs["🏷️ Clean Product Identity:<br>• Brand & Model<br>• Category<br>• Critical Specs"]
+    Gemini --> Specs["🏷️ Normalized Identity:<br>• Brand & Clean Model<br>• Category<br>• Core Matching Attributes"]
 ```
 
-Depending on the product, we zoom in on the rules:
-* 📱 **Phone**: How much Brain (**RAM**) and Pocket Space (**Storage**) does it have?
-* 📺 **Television**: How big is the glass screen (**Inches**)?
-* 👟 **Sneakers & Clothes**: What **Colour** is it?
+1. **ASIN Extraction**: Amazon links contain lots of dynamic query parameters (`ref=`, `qid=`, `dib=`). I strip these out to grab the clean 10-character Amazon ASIN (`B0...`), and fetch Amazon's lightweight mobile product page (`/gp/aw/d/ASIN`). This returns the core product details in a fraction of the time and size of the desktop site.
+2. **Attribute Extraction with Gemini**: The fetched HTML is passed through Gemini to extract a clean JSON profile:
+   - **Brand & Model**: e.g., `Apple`, `iPhone 15`
+   - **Category**: `SMARTPHONE`, `TELEVISION`, `SNEAKERS`, or `CLOTHING`
+   - **Category-Specific Specs**:
+     - *Smartphones*: Physical base RAM and internal storage (filtering out marketing terms like "virtual RAM").
+     - *Televisions*: Display size in inches (normalizing `138.8 cm` to `55"`).
+     - *Fashion*: Primary base colourway.
 
 ---
 
-## 🏬 Step 2: Going to the Right Stores
+## 🏬 Step 2: Routing to the Right Platforms
 
-Not all stores sell everything! You wouldn't buy a pair of running shoes at an electronics store, right?
-
-Our app automatically picks the right stores for each category:
+Rather than making unnecessary network calls to all platforms, the system routes queries based on category rules:
 
 ```mermaid
 graph TD
-    subgraph Electronics ["⚡ Electronics Stores"]
+    subgraph Electronics ["⚡ Electronics Platforms"]
         FK1["🛒 Flipkart"]
         CR["🟢 Croma"]
     end
 
-    subgraph Fashion ["👗 Fashion Stores"]
+    subgraph Fashion ["👗 Fashion Platforms"]
         FK2["🛒 Flipkart"]
         MY["👗 Myntra"]
     end
@@ -85,72 +90,88 @@ graph TD
     Clothes["👕 T-shirts / Polos"] --> FK2 & MY
 ```
 
+- **Smartphones & Televisions** ➔ Query **Flipkart** & **Croma**.
+- **Sneakers & Clothing** ➔ Query **Flipkart** & **Myntra**.
+
+To keep search reliable across different platform indexing quirks, I run multiple search strategies concurrently:
+1. Direct store search endpoints / SSR search markup.
+2. Targeted index search queries (`site:croma.com`, `site:myntra.com`) so we find the product even when internal search bars fail on specific model codes.
+
 ---
 
-## 🕵️ Step 3: Comparing Like a Detective
+## 🧠 Step 3: Exact Semantic Matching Rules
 
-This is the hardest part. Just having a similar name is **not enough**! 
-
-If you want a **Red 128GB iPhone**, and a store offers a **Blue 256GB iPhone**, they are **NOT** the same!
+Search engines return candidates that are *relevant*, but they rarely guarantee an *exact SKU match*. This is where my matching engine evaluates each candidate against strict category requirements:
 
 ```mermaid
 flowchart TD
-    subgraph DetectiveRules ["Strict Spec Matching Rules"]
+    subgraph DetectiveRules ["Strict Category Matching Rules"]
         direction TB
-        R1["📱 Phones: RAM + Storage must match!<br><i>8GB + 128GB ≠ 8GB + 256GB</i>"]
-        R2["📺 TVs: Screen size must match!<br><i>55 inch ≠ 65 inch</i>"]
-        R3["👟 Clothes & Shoes: Colour must match!<br><i>White/Black ≠ All Black</i>"]
+        R1["📱 Phones: RAM + Storage must match exactly.<br><i>8GB/128GB ≠ 8GB/256GB</i>"]
+        R2["📺 TVs: Screen size must match exactly.<br><i>55-inch ≠ 65-inch</i>"]
+        R3["👟 Fashion: Primary colourway must match.<br><i>White/Black ≠ Triple Black</i>"]
     end
 
-    AmazonItem["Target Product<br>(from Amazon)"] --> AI["AI Comparison Engine"]
-    StoreCandidates["Store Candidates<br>(Flipkart / Croma / Myntra)"] --> AI
+    AmazonItem["Target Product<br>(from Amazon)"] --> AI["AI Matching Engine"]
+    StoreCandidates["Search Candidates<br>(Flipkart / Croma / Myntra)"] --> AI
     DetectiveRules -.-> AI
     AI --> Decision["🎯 Exact Match OR Reject"]
 ```
 
+### Category Rules I Enforce:
+1. **Smartphones (RAM + Storage)**:
+   - Both RAM and internal storage must match the Amazon product.
+   - A 128 GB phone is never matched with a 256 GB variant.
+   - If a brand advertises "12 GB RAM" on one site (6 GB hardware + 6 GB software expansion) and "6 GB RAM" on Amazon, the prompt normalizes to the physical hardware spec so they match correctly.
+2. **Televisions (Screen Size & Sister Models)**:
+   - Screen size in inches must match identically (a 55" TV cannot match a 65" TV).
+   - **Sister Model Support**: I added logic for retail channel sister models. For example, Sony sells `KD-55X74L` on Amazon/Flipkart and `KD-55X75L` on Croma. They share identical hardware, panel, and firmware; my system recognizes them as an exact match while rejecting different series (`X74L` vs `X80L`).
+3. **Sneakers & Clothing (Colourway)**:
+   - The primary colourway must match. A `White/Navy` sneaker cannot match a `Triple Black` version of the same shoe.
+   - Minor packaging differences or promotional bundles do not invalidate the match.
+
+If no candidate satisfies these strict criteria, the system reports **⚫ Not Listed**.
+
 ---
 
-## 📦 Step 4: The Live Shelf Check (Stock Status)
+## 📦 Step 4: Live Stock Verification (Real-Time Availability)
 
-Sometimes a store listed a product a year ago, but today the shelves are empty!
+Finding a matching URL is not enough. E-commerce platforms often keep index pages active long after an item sells out.
 
-We don't want to tell you *"It's available!"* only for you to click and see a sad *"Sold Out"* screen. So our backend visits the matched product page right before answering:
+Before returning any match to the user, my backend visits the live Product Detail Page (PDP) to inspect current buyability:
 
 ```mermaid
 flowchart LR
-    Matched["Matched Product Page"] --> CheckButtons{"Inspect Checkout Buttons"}
-    CheckButtons -->|"Has 'Buy Now' / 'Add to Cart'"| InStock["🟢 <b>In Stock</b><br>You can buy it right now!"]
-    CheckButtons -->|"Has 'Notify Me' / 'Sold Out'"| OutOfStock["🟡 <b>Out of Stock</b><br>Found the item, but shelves are empty!"]
-    CheckButtons -->|"No Product Page Found"| NotListed["⚫ <b>Not Listed</b><br>Store doesn't sell this model"]
+    Matched["Matched Product Page"] --> CheckButtons{"Inspect Checkout HTML"}
+    CheckButtons -->|"Has 'Buy Now' or 'Add to Cart'"| InStock["🟢 <b>In Stock</b><br>Available for purchase immediately"]
+    CheckButtons -->|"Has 'Notify Me', 'Sold Out', or 'Currently Unavailable'"| OutOfStock["🟡 <b>Out of Stock</b><br>Exact product found, but zero inventory"]
+    CheckButtons -->|"Page deleted / 404"| NotListed["⚫ <b>Not Listed</b><br>Unavailable on this platform"]
 ```
 
----
-
-## 📋 What You See on Screen
-
-For each store, you get one of three crystal-clear badges:
-
-| Badge | Meaning | What Happens When You Click |
-|---|---|---|
-| 🟢 **In Stock** | The exact same item is on the shelf and ready to purchase! | Takes you straight to the checkout/product page to buy. |
-| 🟡 **Out of Stock** | Found the exact same item, but it is currently sold out or has a "Notify Me" button. | Takes you to the product page so you can click "Notify Me" or track restocks. |
-| ⚫ **Not Listed** | This store doesn't sell this specific model or spec configuration. | Keeps you from wasting time searching a store that doesn't have it. |
+### Real-World Edge Cases Handled:
+- **Croma SSR Pincode State**: Croma's initial server-rendered HTML renders disabled button markup before client JavaScript hydrates the user's location. Rather than relying on fragile CSS class names, my stock checker inspects definitive availability signals (`Notify Me`, `Sold Out`, `Currently Unavailable`).
+- **Flipkart Seller Stock**: Flipkart marks items as "Sold Out" or "Currently Out of Stock" when warehouse inventory in a region is exhausted.
+- **Myntra Size Matrix**: A clothing or shoe item is only flagged as in-stock if there is at least one active, purchasable size.
 
 ---
 
-## 💡 Why This Is Smart
+## 📊 Summary of Output Badges
 
-Every shopping website formats their names and HTML differently:
-* Flipkart writes: `SONY Bravia 2 138.8 cm (55 inch) Ultra HD (4K)`
-* Amazon writes: `Sony Bravia 55 inches 4K Ultra HD Smart LED Google TV`
-* Croma writes: `Sony Bravia 2 II 140 cm (55 Inch) 4K Ultra HD`
-
-Traditional scraper code breaks whenever a website changes a single button or CSS class name. By combining **targeted e-commerce searches** with **Gemini AI reasoning** and **live button verification**, our system:
-1. Understands product variants like a human expert.
-2. Respects strict hardware specifications (RAM, storage, screen size, colour).
-3. Always gives real, verified stock status!
+| Badge | Status | Meaning | What Happens When Clicked |
+|---|---|---|---|
+| 🟢 | **In Stock** | The exact product and spec is available to purchase right now. | Opens the direct product page ready for checkout. |
+| 🟡 | **Out of Stock** | Found the exact product match, but it is currently sold out or has a "Notify Me" button. | Opens the product page so the user can track restocks. |
+| ⚫ | **Not Listed** | The platform does not sell this specific model or spec. | Prevents the user from wasting time looking for it. |
 
 ---
 
-*Built for Scruge — Founding Backend Engineer Assignment*  
-*Architecture: Zero external npm dependencies · Node.js HTTP/HTTPS · Google Gemini 2.5/3.5 · Vanilla HTML5/CSS3*
+## 🛠️ Architecture & Engineering Notes
+
+- **Zero External Dependencies**: The entire backend is built using native Node.js core modules (`http`, `https`, `crypto`, `fs`). No Cheerio, Puppeteer, or Express packages required.
+- **Resilient AI Calling**: Calls to Gemini include automated exponential backoff and seamless fallback from `gemini-3.8-flash` to `gemini-3.5-flash-lite` in case of rate limits.
+- **Live Debugging & Observability**: Includes an in-memory rolling log buffer at `/api/debug` and a version endpoint at `/api/version` so system decisions and scraping traces can be monitored in real time.
+
+---
+
+*Author: Shlok Dubey*  
+*Submission for Scruge Founding Backend Engineer Assignment*
