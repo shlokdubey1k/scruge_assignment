@@ -29,6 +29,10 @@ const GIT_COMMIT =
   })();
 
 function makeDdgUrl(q) {
+  return `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(q)}&kl=in-en`;
+}
+
+function makeDdgHtmlUrl(q) {
   return `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}&kl=in-en`;
 }
 
@@ -738,6 +742,44 @@ function parseDdgResults(html, allowedDomain, requirePath) {
     if (candidates.length >= 8) break;
   }
 
+  // Pattern 2: DDG Lite results (<a ... uddg=... ...> ... </a>)
+  if (candidates.length === 0) {
+    const linkRegex = /<a[^>]+href=["']([^"']*uddg=([^&"']+)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let m;
+    while ((m = linkRegex.exec(html)) !== null) {
+      let rawUrl = decodeURIComponent(m[2]);
+      if (!rawUrl.includes(allowedDomain)) continue;
+      if (requirePath && !rawUrl.includes(requirePath)) continue;
+
+      const cleanUrl = rawUrl.split("?")[0];
+      if (seenUrls.has(cleanUrl)) continue;
+
+      if (
+        cleanUrl.endsWith("/search") ||
+        cleanUrl.includes("/mailers") ||
+        cleanUrl.includes("/pr?sid=") ||
+        cleanUrl.includes("/all-products") ||
+        cleanUrl.includes("/clp/") ||
+        cleanUrl.includes("/bc/") ||
+        cleanUrl.includes("/unboxed/")
+      ) {
+        continue;
+      }
+
+      const title = m[3].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      if (!title || title.length < 5) continue;
+
+      seenUrls.add(cleanUrl);
+      candidates.push({
+        title,
+        url: cleanUrl,
+        details: title,
+        inStock: true,
+      });
+      if (candidates.length >= 8) break;
+    }
+  }
+
   return candidates;
 }
 
@@ -770,6 +812,44 @@ function extractFlipkartCandidates(html) {
     });
 
     if (candidates.length >= 8) break;
+  }
+
+  // Pattern 2: DDG Lite results (<a ... uddg=... ...> ... </a>)
+  if (candidates.length === 0) {
+    const linkRegex = /<a[^>]+href=["']([^"']*uddg=([^&"']+)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let m;
+    while ((m = linkRegex.exec(html)) !== null) {
+      let rawUrl = decodeURIComponent(m[2]);
+      if (!rawUrl.includes(allowedDomain)) continue;
+      if (requirePath && !rawUrl.includes(requirePath)) continue;
+
+      const cleanUrl = rawUrl.split("?")[0];
+      if (seenUrls.has(cleanUrl)) continue;
+
+      if (
+        cleanUrl.endsWith("/search") ||
+        cleanUrl.includes("/mailers") ||
+        cleanUrl.includes("/pr?sid=") ||
+        cleanUrl.includes("/all-products") ||
+        cleanUrl.includes("/clp/") ||
+        cleanUrl.includes("/bc/") ||
+        cleanUrl.includes("/unboxed/")
+      ) {
+        continue;
+      }
+
+      const title = m[3].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      if (!title || title.length < 5) continue;
+
+      seenUrls.add(cleanUrl);
+      candidates.push({
+        title,
+        url: cleanUrl,
+        details: title,
+        inStock: true,
+      });
+      if (candidates.length >= 8) break;
+    }
   }
 
   return candidates;
@@ -1077,31 +1157,46 @@ async function searchCroma(product) {
     seenDdgQueries.add(ddgQ.toLowerCase());
 
     log(`🦆 [Croma] Querying DuckDuckGo index for: "${ddgQ}"...`);
-    const ddgUrl = makeDdgUrl(ddgQ);
     try {
-      const { body } = await fetchUrl(ddgUrl, {
-        timeout: 6000,
-        headers: { Referer: "https://duckduckgo.com/" },
-      });
-      // Prefer actual product pages (/p/) first, then broader croma pages
-      const found = parseDdgResults(body, "croma.com", "/p/");
-      for (const c of found) {
-        if (!candidates.some((existing) => existing.url === c.url) && candidates.length < 8) {
-          candidates.push(c);
-        }
+      let body;
+      try {
+        const res = await fetchUrl(makeDdgUrl(ddgQ), {
+          timeout: 8000,
+          headers: { Referer: "https://lite.duckduckgo.com/" },
+        });
+        body = res.body;
+      } catch (err) {
+        log(`⚠️  [Croma] DDG Lite note (${err.message}), trying HTML fallback...`);
+        const res = await fetchUrl(makeDdgHtmlUrl(ddgQ), {
+          timeout: 8000,
+          headers: { Referer: "https://duckduckgo.com/" },
+        });
+        body = res.body;
       }
-      if (candidates.length === 0) {
-        const anyCroma = parseDdgResults(body, "croma.com");
-        for (const c of anyCroma) {
+
+      if (body) {
+        // Prefer actual product pages (/p/) first, then broader croma pages
+        const found = parseDdgResults(body, "croma.com", "/p/");
+        for (const c of found) {
           if (!candidates.some((existing) => existing.url === c.url) && candidates.length < 8) {
             candidates.push(c);
           }
         }
+        if (candidates.length === 0) {
+          const anyCroma = parseDdgResults(body, "croma.com");
+          for (const c of anyCroma) {
+            if (!candidates.some((existing) => existing.url === c.url) && candidates.length < 8) {
+              candidates.push(c);
+            }
+          }
+        }
+        if (candidates.length > 0) {
+          log(`🦆 [Croma] Total candidates after "${ddgQ}": ${candidates.length}`);
+        }
       }
-      if (candidates.length > 0) {
-        log(`🦆 [Croma] Total candidates after "${ddgQ}": ${candidates.length}`);
-      }
-    } catch (e) {}
+    } catch (e) {
+      log(`⚠️  [Croma] Search error for "${ddgQ}": ${e.message}`);
+    }
   }
 
   if (candidates.length === 0) {
