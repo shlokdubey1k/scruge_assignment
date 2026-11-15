@@ -943,22 +943,30 @@ async function searchFlipkart(product) {
 
   if (!hasExactModel) {
     log(`🦆 [Flipkart] Exact model not confirmed in direct search; querying DuckDuckGo index for: "${query}"...`);
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " site:flipkart.com")}`;
-    try {
-      const { body } = await fetchUrl(ddgUrl, {
-        timeout: 6000,
-        headers: { Referer: "https://duckduckgo.com/" },
-      });
-      const ddgCandidates = parseDdgResults(body, "flipkart.com", "/p/");
-      for (const dc of ddgCandidates) {
-        if (!candidates.some((c) => c.url === dc.url) && candidates.length < 8) {
-          candidates.push(dc);
+    const fkDdgQueries = [
+      `${query} site:flipkart.com`,
+      `${query} flipkart`,
+      `${fallbackQuery} flipkart`,
+    ];
+    for (const ddgQ of fkDdgQueries) {
+      if (candidates.length >= 4) break;
+      const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(ddgQ)}`;
+      try {
+        const { body } = await fetchUrl(ddgUrl, {
+          timeout: 6000,
+          headers: { Referer: "https://duckduckgo.com/" },
+        });
+        const ddgCandidates = parseDdgResults(body, "flipkart.com", "/p/");
+        for (const dc of ddgCandidates) {
+          if (!candidates.some((c) => c.url === dc.url) && candidates.length < 8) {
+            candidates.push(dc);
+          }
         }
-      }
-      if (candidates.length > 0) {
-        log(`🦆 [Flipkart] Total candidates after DuckDuckGo: ${candidates.length}`);
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
+    if (candidates.length > 0) {
+      log(`🦆 [Flipkart] Total candidates after DuckDuckGo: ${candidates.length}`);
+    }
   }
 
   // Tier 3: DuckDuckGo index with core fallback query
@@ -1032,34 +1040,48 @@ async function searchCroma(product) {
     } catch (e) {}
   }
 
-  // Tier 2: DuckDuckGo index with clean domain filter
-  if (candidates.length === 0) {
-    log(`🦆 [Croma] Querying DuckDuckGo index for: "${query}"...`);
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " site:croma.com")}`;
-    try {
-      const { body } = await fetchUrl(ddgUrl, {
-        timeout: 6000,
-        headers: { Referer: "https://duckduckgo.com/" },
-      });
-      candidates = parseDdgResults(body, "croma.com", "/p/");
-      if (candidates.length === 0) {
-        candidates = parseDdgResults(body, "croma.com");
-      }
-      if (candidates.length > 0) log(`🦆 [Croma] Found ${candidates.length} candidates via DuckDuckGo.`);
-    } catch (e) {}
-  }
+  // Tier 2: DuckDuckGo index with multiple query formats (keyword & site: queries)
+  // Note: DuckDuckGo often returns 0 results for 'site:croma.com' due to strict indexing,
+  // whereas querying '${query} croma' reliably returns direct croma.com product links.
+  const ddgVariants = [
+    `${cleanPhone || query} croma`,
+    `${query} croma`,
+    `${query} site:croma.com`,
+    `${fallbackQuery} croma`,
+    `${fallbackQuery} site:croma.com`,
+  ];
 
-  // Tier 3: DuckDuckGo with core fallback query
-  if (candidates.length === 0 && fallbackQuery && fallbackQuery !== query) {
-    log(`🦆 [Croma] Trying broader fallback query on DuckDuckGo: "${fallbackQuery}"...`);
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(fallbackQuery + " site:croma.com")}`;
+  const seenDdgQueries = new Set();
+  for (const ddgQ of ddgVariants) {
+    if (candidates.length >= 4) break;
+    if (seenDdgQueries.has(ddgQ.toLowerCase())) continue;
+    seenDdgQueries.add(ddgQ.toLowerCase());
+
+    log(`🦆 [Croma] Querying DuckDuckGo index for: "${ddgQ}"...`);
+    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(ddgQ)}`;
     try {
       const { body } = await fetchUrl(ddgUrl, {
         timeout: 6000,
         headers: { Referer: "https://duckduckgo.com/" },
       });
-      candidates = parseDdgResults(body, "croma.com");
-      if (candidates.length > 0) log(`🦆 [Croma] Found ${candidates.length} candidates via fallback query.`);
+      // Prefer actual product pages (/p/) first, then broader croma pages
+      const found = parseDdgResults(body, "croma.com", "/p/");
+      for (const c of found) {
+        if (!candidates.some((existing) => existing.url === c.url) && candidates.length < 8) {
+          candidates.push(c);
+        }
+      }
+      if (candidates.length === 0) {
+        const anyCroma = parseDdgResults(body, "croma.com");
+        for (const c of anyCroma) {
+          if (!candidates.some((existing) => existing.url === c.url) && candidates.length < 8) {
+            candidates.push(c);
+          }
+        }
+      }
+      if (candidates.length > 0) {
+        log(`🦆 [Croma] Total candidates after "${ddgQ}": ${candidates.length}`);
+      }
     } catch (e) {}
   }
 
