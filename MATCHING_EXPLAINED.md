@@ -1,7 +1,4 @@
 # How Cross-Platform Product Matching Works
-### *A plain-English walkthrough of the architecture, matching rules, and edge cases*
-
----
 
 ## 💡 The Problem & My Approach
 

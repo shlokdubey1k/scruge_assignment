@@ -22,3 +22,6 @@ Thumbs.db
 
 # Scratch & debug scripts
 scratch/
+mermaid.min.js
+doc_template.html
+build_doc_html.js

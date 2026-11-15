@@ -67,7 +67,7 @@ Gemini matches: same product? same specs? in stock?
 Return: In Stock 🟢 / Out of Stock 🟡 / Not Listed ⚫
 ```
 
-See [MATCHING_EXPLAINED.md](./MATCHING_EXPLAINED.md) for a plain-English explanation.
+See [MATCHING_EXPLAINED.md](./MATCHING_EXPLAINED.md) for the architecture and matching logic.
 
 ---
 
@@ -84,7 +84,7 @@ scruge_assignment/
 │   └── app.js           # Frontend JS
 ├── .env.example         # Template for environment variables
 ├── package.json
-├── MATCHING_EXPLAINED.md  # ELI5 matching explanation
+├── MATCHING_EXPLAINED.md  # Matching logic & architecture guide
 └── README.md
 ```
 
