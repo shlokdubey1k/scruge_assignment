@@ -277,8 +277,17 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
-// ── Paste URL hint ────────────────────────────────────────────────────────
+// ── Paste URL hint & Version loader ───────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
+  // Load and display deployed commit ID
+  fetch("/api/version")
+    .then((r) => r.json())
+    .then((v) => {
+      const el = document.getElementById("commitId");
+      if (el && v.commit) el.textContent = v.commit;
+    })
+    .catch(() => {});
+
   const input = $("amazonUrl");
   if (input) {
     input.addEventListener("keydown", (e) => {

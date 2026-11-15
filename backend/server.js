@@ -17,6 +17,21 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const PORT = process.env.PORT || 3000;
 const FRONTEND_DIR = path.join(__dirname, "../frontend");
 
+const GIT_COMMIT =
+  (process.env.RENDER_GIT_COMMIT && process.env.RENDER_GIT_COMMIT.slice(0, 7)) ||
+  process.env.GIT_COMMIT ||
+  (() => {
+    try {
+      return require("child_process").execSync("git rev-parse --short HEAD").toString().trim();
+    } catch {
+      return "07788c3";
+    }
+  })();
+
+function makeDdgUrl(q) {
+  return `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}&kl=in-en`;
+}
+
 function log(msg) {
   const ts = new Date().toLocaleTimeString("en-US", { hour12: false });
   console.log(`[${ts}] ${msg}`);
@@ -402,7 +417,7 @@ async function lookupAsinViaDDG(asin) {
     `${asin}`,
   ];
   for (const q of queries) {
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+    const searchUrl = makeDdgUrl(q);
     log(`🦆 Looking up ASIN ${asin} via DuckDuckGo ("${q}")...`);
     try {
       const { body } = await fetchUrl(searchUrl, {
@@ -498,9 +513,8 @@ async function scrapeAmazon(amazonUrl) {
 
   // Attempt 3: If still thin, lookup by product slug on DuckDuckGo
   if ((!pageText || pageText.length < 100) && urlHint) {
-    const query = encodeURIComponent(`"${urlHint}" site:amazon.in`);
     try {
-      const { body } = await fetchUrl(`https://html.duckduckgo.com/html/?q=${query}`, {
+      const { body } = await fetchUrl(makeDdgUrl(`"${urlHint}" site:amazon.in`), {
         timeout: 6000,
         headers: { Referer: "https://duckduckgo.com/" },
       });
@@ -953,7 +967,7 @@ async function searchFlipkart(product) {
     ];
     for (const ddgQ of fkDdgQueries) {
       if (candidates.length >= 4) break;
-      const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(ddgQ)}`;
+      const ddgUrl = makeDdgUrl(ddgQ);
       try {
         const { body } = await fetchUrl(ddgUrl, {
           timeout: 6000,
@@ -975,7 +989,7 @@ async function searchFlipkart(product) {
   // Tier 3: DuckDuckGo index with core fallback query
   if (candidates.length === 0 && fallbackQuery && fallbackQuery !== query) {
     log(`🦆 [Flipkart] Trying broader fallback query on DuckDuckGo: "${fallbackQuery}"...`);
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(fallbackQuery + " site:flipkart.com")}`;
+    const ddgUrl = makeDdgUrl(fallbackQuery + " site:flipkart.com");
     try {
       const { body } = await fetchUrl(ddgUrl, {
         timeout: 6000,
@@ -1061,7 +1075,7 @@ async function searchCroma(product) {
     seenDdgQueries.add(ddgQ.toLowerCase());
 
     log(`🦆 [Croma] Querying DuckDuckGo index for: "${ddgQ}"...`);
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(ddgQ)}`;
+    const ddgUrl = makeDdgUrl(ddgQ);
     try {
       const { body } = await fetchUrl(ddgUrl, {
         timeout: 6000,
@@ -1183,7 +1197,7 @@ async function searchMyntra(product) {
   // Tier 3: DuckDuckGo index with primary query
   if (candidates.length === 0) {
     log(`🦆 [Myntra] Querying DuckDuckGo index for: "${query}"...`);
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " site:myntra.com")}`;
+    const ddgUrl = makeDdgUrl(query + " site:myntra.com");
     try {
       const { body } = await fetchUrl(ddgUrl, {
         timeout: 6000,
@@ -1202,7 +1216,7 @@ async function searchMyntra(product) {
   // Tier 4: DuckDuckGo index with core fallback query
   if (candidates.length === 0 && fallbackQuery && fallbackQuery !== query) {
     log(`🦆 [Myntra] Trying broader fallback query on DuckDuckGo: "${fallbackQuery}"...`);
-    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(fallbackQuery + " site:myntra.com")}`;
+    const ddgUrl = makeDdgUrl(fallbackQuery + " site:myntra.com");
     try {
       const { body } = await fetchUrl(ddgUrl, {
         timeout: 6000,
@@ -1345,8 +1359,13 @@ function serveFile(res, filePath, contentType) {
       res.end("Not found");
       return;
     }
+    let output = data;
+    if (filePath.endsWith("index.html")) {
+      const htmlStr = data.toString("utf8").replace("{{COMMIT_HASH}}", GIT_COMMIT);
+      output = Buffer.from(htmlStr, "utf8");
+    }
     res.writeHead(200, { "Content-Type": contentType });
-    res.end(data);
+    res.end(output);
   });
 }
 
@@ -1379,7 +1398,14 @@ const server = http.createServer(async (req, res) => {
   // API: Health check
   if (pathname === "/api/health" && req.method === "GET") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", gemini: !!GEMINI_API_KEY }));
+    res.end(JSON.stringify({ status: "ok", gemini: !!GEMINI_API_KEY, commit: GIT_COMMIT }));
+    return;
+  }
+
+  // API: Version / Commit Info
+  if (pathname === "/api/version" && req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ commit: GIT_COMMIT }));
     return;
   }
 

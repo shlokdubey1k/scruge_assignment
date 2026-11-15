@@ -523,3 +523,21 @@ h1 {
   .product-banner-body { flex-direction: column; }
   .result-body { flex-direction: column; align-items: flex-start; }
 }
+
+.commit-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-surface, #1e293b);
+  border: 1px solid var(--border, #334155);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted, #94a3b8);
+}
+
+.commit-tag code {
+  color: #38bdf8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
