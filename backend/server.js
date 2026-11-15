@@ -809,11 +809,9 @@ async function verifyLiveStock(platform, productUrl) {
 
     if (platform === "croma") {
       // Croma signals for Out Of Stock:
-      // 1. Both Buy Now and Add to Cart buttons disabled (e.g. disableBuyNow and disableCartBtn)
-      if (body.includes("disableBuyNow") && body.includes("disableCartBtn")) {
-        return false;
-      }
-      if (/\b(out of stock|sold out|currently unavailable|notify me)\b/i.test(body)) {
+      // Note: Croma SSR HTML contains "disableBuyNow" until client-side hydration,
+      // so we only flag as out of stock if explicit out of stock text is present.
+      if (/\b(out of stock|sold out|temporarily unavailable|currently unavailable|notify me)\b/i.test(body)) {
         return false;
       }
     }
