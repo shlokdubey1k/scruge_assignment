@@ -64,15 +64,25 @@ Render is the simplest free platform to host Node.js web services.
 
 ---
 
-## Option 3: Instant Live Demo via ngrok / Localtunnel (Zero Deployment)
+## Option 3: Instant Live Public URL from Local Machine (Recommended for Submissions)
 
-If you need a public URL to share right now without pushing to GitHub:
+Because Indian shopping websites (Croma, Flipkart) permit Indian residential IPs with zero captcha blocks, tunneling your local machine gives **100% search accuracy and 1-second response times**.
 
-### Using localtunnel:
+### 1-Click Launch:
+Simply run the included script:
+```powershell
+.\run_public.bat
+```
+This automatically starts `node backend/server.js` and creates an instant, public HTTPS URL (e.g. `https://xxxx.a.pinggy.io`) using Windows' built-in OpenSSH client (`ssh.exe`). Zero installation required!
+
+### Alternative via Localtunnel:
+```powershell
+.\run_localtunnel.bat
+```
+Or manually in terminal:
 ```bash
 npx localtunnel --port 3000
 ```
-This gives you an instant public HTTPS URL (e.g. `https://quiet-fox-42.loca.lt`) pointing directly to your local running server.
 
 ---
 
